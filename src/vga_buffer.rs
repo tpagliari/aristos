@@ -1,3 +1,6 @@
+use volatile::Volatile;
+
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)] // each enum is stored as u8
@@ -51,7 +54,7 @@ const BUFFER_WIDTH: usize = 80;
 /// so that the VGA buffer is of type Buffer.
 #[repr(transparent)]
 struct Buffer {
-    chars: [[ScreenChar; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
 /** A writer struct to handle writing to the screen buffer:
@@ -62,7 +65,7 @@ struct Buffer {
 pub struct Writer {
     column_position : usize,
     color_code : ColorCode,
-    buffer : &'static mut Buffer
+    buffer : &'static mut Buffer // 'static means that the reference is valid for the entire program lifetime
 }
 
 impl Writer {
@@ -74,13 +77,15 @@ impl Writer {
         match byte {
             b'\n' => {self.new_line()},
             _ => {
-                if self.column_position >= BUFFER_WIDTH {
-                    self.new_line();
-                };
-                self.buffer.chars[BUFFER_HEIGHT-1][self.column_position] = ScreenChar {
-                    char_ascii: byte,
-                    color_code: self.color_code
-                };
+                let row: usize = BUFFER_HEIGHT - 1;
+                let col: usize = self.column_position;
+
+                if col >= BUFFER_WIDTH { self.new_line(); }
+
+                self.buffer.chars[row][col].write(
+                    ScreenChar { char_ascii: byte, color_code: self.color_code }
+                );
+                
                 self.column_position += 1;
             }
         }
