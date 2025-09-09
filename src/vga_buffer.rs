@@ -1,5 +1,5 @@
 use volatile::Volatile;
-use core::fmt;
+use core::{fmt, usize};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,13 +69,31 @@ pub struct Writer {
 }
 
 impl Writer {
+
     fn new_line(&mut self) {
-        /* TODO */
+        for r in 1..BUFFER_HEIGHT {
+            for c in 0..BUFFER_WIDTH {
+                let char: ScreenChar = self.buffer.chars[r][c].read();
+                self.buffer.chars[r-1][c].write(char);
+            }
+        }
+        self.clear_row(BUFFER_HEIGHT-1); // only the bottom row needs to be cleared, the others are overwritten
+        self.column_position = 0;
+    }
+
+    fn clear_row(&mut self, row: usize) {
+        let cancel: ScreenChar = ScreenChar {
+            char_ascii : b' ',
+            color_code : self.color_code
+        };
+        for c in 0..BUFFER_WIDTH {
+            self.buffer.chars[row][c].write(cancel);
+        } 
     }
 
     pub fn write_a_byte(&mut self, byte: u8) {
         match byte {
-            b'\n' => {self.new_line()},
+            b'\n' => self.new_line(),
             _ => {
                 let row: usize = BUFFER_HEIGHT - 1;
                 let col: usize = self.column_position;
@@ -119,7 +137,6 @@ pub fn print_something() {
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     };
 
-    writer.write_a_byte(b'H');
-    writer.write_a_str(" Wörld!");
-    write!(writer, " The numbers are {} and {}", 42, 1.0/3.0).unwrap();
+    write!(writer, "Welcome to AristOS,\nan os from the ancient Greece.\n\n").unwrap();
+    write!(writer, "The numbers are {} and {}", 42, 1.0/3.0).unwrap();
 }
