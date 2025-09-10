@@ -3,6 +3,7 @@ use core::{fmt, usize};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
+/// Color enum that matches VGA's 4-bit palette per color
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)] // each enum is stored as u8
@@ -56,13 +57,15 @@ const BUFFER_WIDTH: usize = 80;
 /// so that the VGA buffer is of type Buffer.
 #[repr(transparent)]
 struct Buffer {
+    // Use Volatile to prevent the compiler from optimizing away reads/writes:
+    // with MMIO memory like VGA, writes have side effects and must not be elided.
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 
 /** A writer struct to handle writing to the screen buffer:
  - `column_position`: keeps track of the current column position where the next character will be written
  - `color_code`: stores the current color code to be used
- - `buffer`: mutable reference to screen buffer, allowing the writer to modify the buffer
+ - `buffer`: static mutable reference to screen buffer, allowing the writer to modify the buffer
  */ 
 pub struct Writer {
     column_position : usize,
@@ -72,6 +75,7 @@ pub struct Writer {
 
 impl Writer {
 
+    /// Move all rows up one (scroll up) and clear the last row.
     fn new_line(&mut self) {
         for r in 1..BUFFER_HEIGHT {
             for c in 0..BUFFER_WIDTH {
@@ -83,6 +87,7 @@ impl Writer {
         self.column_position = 0;
     }
 
+    /// Clear a specific row (fill with spaces using current color).
     fn clear_row(&mut self, row: usize) {
         let cancel: ScreenChar = ScreenChar {
             char_ascii : b' ',
@@ -93,6 +98,8 @@ impl Writer {
         } 
     }
 
+    /// Write a single byte to the buffer, handling newline and wrapping.
+    /// Low-level primitive used by higher-level write functions.
     pub fn write_a_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
@@ -101,7 +108,8 @@ impl Writer {
                 let col: usize = self.column_position;
 
                 if col >= BUFFER_WIDTH { self.new_line(); }
-
+                
+                // volatile write
                 self.buffer.chars[row][col].write(
                     ScreenChar { char_ascii: byte, color_code: self.color_code }
                 );
@@ -111,6 +119,7 @@ impl Writer {
         }
     }
 
+    /// Write a UTF-8 string
     pub fn write_a_str(&mut self, xs: &str) {
         for x in xs.as_bytes() {
             match x {
@@ -121,7 +130,7 @@ impl Writer {
     }
 }
 
-/// Write trait for the Writer struct
+/// Implement fmt::Write so we can use write_fmt and integration with format_args!
 impl fmt::Write for Writer {
     // Required method
     fn write_str(&mut self, xs: &str) -> fmt::Result {
@@ -131,6 +140,9 @@ impl fmt::Write for Writer {
 }
 
 lazy_static!(
+    /** Global, synchronized VGA writer instance.
+    Multiple cores/interrupt contexts could want to print; wrapping in a Mutex makes access safe.
+    lazy_static ensures initialization happens at runtime once. */
     pub static ref WRITER : Mutex<Writer> = Mutex::new(
         Writer {
             column_position: 0,
@@ -139,3 +151,26 @@ lazy_static!(
         }
     );
 );
+
+// We can copy the println! and print! macros, but modify them to use our own _print function
+
+/// println! macro: forwards to our print! macro and appends newline
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+/// print! macro: forwards formatted args to vga_buffer::_print (our low-level print entry point).
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
+}
+
+/// our own _print
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    // Lock the mutex, write the formatted args (which call Writer::write_str), and unwrap the result.
+    WRITER.lock().write_fmt(args).unwrap();
+}

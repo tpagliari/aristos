@@ -3,16 +3,14 @@
 
 mod vga_buffer;
 
-use vga_buffer::WRITER;
 use core::panic::PanicInfo;
 
 /** Entry point the bootloader or runtime will jump to;
 must have an unmangled symbol named `_start`. */
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    use core::fmt::Write;
-    write!(WRITER.lock(), "Welcome to AristOS,\nan os from the ancient Greece.\n\n").unwrap();
-    write!(WRITER.lock(), "Take these numbers: {} and {}", 86, 128/2).unwrap();
+    println!("Hello World!");
+    println!("Welcome to AristOS, an OS from the ancient greece, year {} post Monad", 8664);
     
     // Prevent returning; on bare metal we should not fall back to any runtime
     loop {}
@@ -21,5 +19,6 @@ pub extern "C" fn _start() -> ! {
 /** Minimal panic handler required when building with #![no_std] */
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    println!("{}", _info);
     loop {}
 }
