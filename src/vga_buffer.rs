@@ -1,5 +1,7 @@
 use volatile::Volatile;
 use core::{fmt, usize};
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,15 +130,12 @@ impl fmt::Write for Writer {
     }
 }
 
-/// temporary to try it out
-pub fn print_something() {
-    use core::fmt::Write;
-    let mut writer = Writer {
-        column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-    };
-
-    write!(writer, "Welcome to AristOS,\nan os from the ancient Greece.\n\n").unwrap();
-    write!(writer, "The numbers are {} and {}", 42, 1.0/3.0).unwrap();
-}
+lazy_static!(
+    pub static ref WRITER : Mutex<Writer> = Mutex::new(
+        Writer {
+            column_position: 0,
+            color_code: ColorCode::new(Color::Yellow, Color::Black),
+            buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+        }
+    );
+);
